@@ -18,6 +18,7 @@ description: Orchestrate a single editable video project from an arbitrary mixed
 7. 把内容判断交给 Codex，把文件结构、环境检查和草稿静态检查交给本 Skill 的脚本。
 8. 默认一次只处理一个主媒体文件并生成一条成片；其他文件必须经用户确认后才能作为辅助素材。
 9. 不要求用户改名、分类、预剪或创建 `口播/录屏/真人出镜/补充素材` 等目录。
+10. 每个适用阶段都生成可直接打开的预览；用户批准前不进入下一项会改变内容或时间线的阶段。
 
 ## 用户意图与主文件门禁
 
@@ -34,6 +35,35 @@ description: Orchestrate a single editable video project from an arbitrary mixed
 ## 自动选择流程
 
 门禁通过后读取 [references/workflow-routing.md](references/workflow-routing.md)，根据用户目标和实际素材选择最小流程。教程只是其中一种路由，不是默认路由。告诉用户选择了什么流程及原因，然后继续；只有路线会显著改变内容时才再次请求确认。
+
+## 阶段预览门禁
+
+读取 [references/preview-gates.md](references/preview-gates.md)。为所选路线的每个适用阶段产出轻量、可直接打开的预览，并明确提供三个选择：通过、要求修改、停止。
+
+至少覆盖以下适用阶段：
+
+1. 内容与剪辑方案：素材范围、目标、结构和预计处理清单。
+2. 文字或内容清理：可同步播放的转写校稿页，或带时间码的保留/删除建议。
+3. 粗剪：低码率完整审片 MP4；必要时附时间线图、波形或切点对比。
+4. 画面与视觉：录屏匹配表、分镜、关键帧、封面候选或带画中画/动效的代理视频。
+5. 剪映 V1：与草稿时间线一致的审片代理、静态验证报告和剪映实际打开门禁。
+6. OpenChatCut：使用手动审批会话，让用户在工作台内预览提案。
+7. 剪映 V2：再次生成审片代理并重复草稿验证。
+
+使用 `video-editing` Skill 已有的 `transcript_review.py`、`review_proxy.py`、`timeline_view.py`、`edit_compare.py` 或 `review_dashboard.py`，只调用当前阶段需要的工具。在 Codex App 中用可点击的绝对文件链接展示 HTML、报告和视频，并直接渲染适合内联查看的图片或媒体；不要只报告文件路径。
+
+用户要求修改时生成 `v2`、`v3` 等新预览，不覆盖已审阅版本。用户做出决定后运行：
+
+```bash
+python3 scripts/record_review.py \
+  --project <项目目录> \
+  --stage <阶段> \
+  --status approved|changes_requested|skipped \
+  --preview <预览文件> \
+  --note "<用户反馈或跳过原因>"
+```
+
+阶段不适用时标记 `skipped` 并记录原因。适用阶段没有 `approved` 时不得宣称项目完成。
 
 ## 环境启动
 
@@ -93,6 +123,8 @@ python3 scripts/validate_capcut_draft.py \
 - 切点、变速和同步关系正确；
 - 工程可以保存、关闭并重新打开。
 
+在要求用户打开剪映前，先提供与 V1 时间线一致的低码率审片代理。代理通过不等于草稿兼容性通过，两项都要记录。
+
 静态验证不等于剪映兼容性验证。不要声称未实际打开的工程“已通过”。
 
 ## 阶段三：OpenChatCut 精剪补充
@@ -130,3 +162,4 @@ python3 scripts/validate_capcut_draft.py \
 - 所有烘焙素材独立可替换；
 - OpenChatCut 失败不会破坏剪映保底版本；
 - 项目状态足以让下一次 Codex 会话继续执行。
+- 所有适用的阶段预览均已由用户批准，不适用阶段已记录跳过原因。

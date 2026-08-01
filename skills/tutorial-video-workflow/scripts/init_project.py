@@ -62,7 +62,9 @@ def main() -> int:
 
     for relative in (
         "workflow", "work/transcripts", "work/proxies", "work/clips",
-        "work/generated_assets", "previews", "deliverables/capcut_v1_rough_cut",
+        "work/generated_assets", "previews/plan", "previews/content",
+        "previews/rough_cut", "previews/visual", "previews/capcut_v1",
+        "previews/openchatcut", "previews/capcut_v2", "deliverables/capcut_v1_rough_cut",
         "deliverables/openchatcut_project", "deliverables/capcut_v2_refined",
     ):
         (project / relative).mkdir(parents=True, exist_ok=True)
@@ -87,6 +89,11 @@ def main() -> int:
         "assets": inventory(source),
         "timeline": previous.get("timeline", []),
         "versions": previous.get("versions", []),
+        "review_policy": {
+            "require_explicit_approval": True,
+            "preserve_prior_versions": True,
+            "states_file": "workflow/reviews.json",
+        },
         "gates": previous.get("gates", {
             "capcut_v1_static": "pending",
             "capcut_v1_opened": "pending",

@@ -8,13 +8,14 @@ project/
 │   ├── project.json
 │   ├── preflight.json
 │   ├── capcut_v1_validation.json
+│   ├── reviews.json
 │   └── openchatcut_changes.json
 ├── work/
 │   ├── transcripts/
 │   ├── proxies/
 │   ├── clips/
 │   └── generated_assets/
-├── previews/
+├── previews/           每阶段版本化预览
 └── deliverables/
     ├── capcut_v1_rough_cut/
     ├── openchatcut_project/
@@ -61,3 +62,5 @@ project/
 ## 版本规则
 
 永不覆盖 `verified` 版本。每个剪映版本同时记录：生成时间、来源配置、静态验证报告、实际打开验证状态和已知损失。
+
+所有适用阶段都必须在 `reviews.json` 中留下明确的用户决定。用户要求修改后保留旧预览并递增版本。
