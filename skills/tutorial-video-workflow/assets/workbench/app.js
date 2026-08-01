@@ -19,6 +19,7 @@ const activeVideo = () => state.tracks.video.filter((clip) => clip.enabled !== f
 function excludedRangesFor(clip) {
   if (clip.assetId !== state.transcript.assetId) return [];
   const ranges = [
+    ...state.transcript.segments.filter((segment) => segment.deleted).map((segment) => [segment.start, segment.end]),
     ...allWords().filter((word) => word.deleted).map((word) => [word.start, word.end]),
     ...state.cuts.filter((cut) => cut.assetId === clip.assetId).map((cut) => [cut.start, cut.end]),
   ].filter(([start, end]) => end > clip.sourceStart && start < clip.sourceEnd)
@@ -65,7 +66,7 @@ async function load() {
   if (!response.ok) throw new Error(await response.text());
   state = await response.json();
   state.cuts ||= [];
-  state.roughCutSuggestions ||= [];
+  for (const segment of state.transcript.segments) segment.deleted ??= false;
   $('#projectTitle').textContent = state.title || '视频粗剪工作台';
   updateTimelinePositions();
   render();
@@ -105,7 +106,7 @@ function updateTimelinePositions() {
 
 function render() {
   renderMediaBin();
-  renderSuggestions();
+  renderSentenceCuts();
   renderTranscript();
   renderTimeline();
   renderInspector();
@@ -129,30 +130,23 @@ function renderMediaBin() {
   }
 }
 
-function renderSuggestions() {
-  const root = $('#suggestions');
+function renderSentenceCuts() {
+  const root = $('#sentenceCuts');
   root.innerHTML = '';
-  if (!state.roughCutSuggestions.length) {
-    root.innerHTML = '<p class="panel-help">暂无自动建议。Codex 的建议必须由你确认后才会应用。</p>';
+  if (!state.transcript.segments.length) {
+    root.innerHTML = '<p class="panel-help">没有可编辑的句子。</p>';
     return;
   }
-  for (const suggestion of state.roughCutSuggestions) {
+  for (const [index, segment] of state.transcript.segments.entries()) {
     const card = document.createElement('article');
-    card.className = `suggestion ${suggestion.status}`;
-    card.innerHTML = `<p>${suggestion.label}</p><small>${fmt(suggestion.start)}–${fmt(suggestion.end)} · ${suggestion.reason}</small><div class="media-actions"><button data-listen>试听</button><button data-apply>${suggestion.status === 'applied' ? '已应用' : '应用'}</button><button data-ignore>忽略</button></div>`;
-    card.querySelector('[data-listen]').onclick = () => seekSource(suggestion.start);
-    card.querySelector('[data-apply]').disabled = suggestion.status === 'applied';
-    card.querySelector('[data-apply]').onclick = () => applySuggestion(suggestion);
-    card.querySelector('[data-ignore]').onclick = () => mutate(() => { suggestion.status = 'ignored'; state.cuts = state.cuts.filter((cut) => cut.suggestionId !== suggestion.id); });
+    card.className = `sentence-cut${segment.deleted ? ' deleted' : ''}`;
+    const text = segment.words.map((word) => word.text).join('');
+    card.innerHTML = `<div class="sentence-cut-top"><span>句 ${String(index + 1).padStart(2, '0')} · ${fmt(segment.start)}–${fmt(segment.end)}</span><span class="sentence-cut-status">${segment.deleted ? '已删除' : '保留'}</span></div><p class="sentence-cut-text"></p><div class="media-actions"><button data-play>播放本句</button><button data-toggle class="${segment.deleted ? '' : 'danger'}">${segment.deleted ? '恢复本句' : '删除本句'}</button></div>`;
+    card.querySelector('.sentence-cut-text').textContent = text || '（无文字）';
+    card.querySelector('[data-play]').onclick = () => seekSource(segment.start);
+    card.querySelector('[data-toggle]').onclick = () => mutate(() => { segment.deleted = !segment.deleted; });
     root.append(card);
   }
-}
-
-function applySuggestion(suggestion) {
-  mutate(() => {
-    suggestion.status = 'applied';
-    if (!state.cuts.some((cut) => cut.suggestionId === suggestion.id)) state.cuts.push({ id: `cut-${suggestion.id}`, suggestionId: suggestion.id, assetId: state.transcript.assetId, start: suggestion.start, end: suggestion.end });
-  });
 }
 
 function previewAsset(asset) {
@@ -197,7 +191,7 @@ function renderTranscript() {
   root.innerHTML = '';
   for (const segment of state.transcript.segments) {
     const row = document.createElement('div');
-    row.className = 'sentence';
+    row.className = `sentence${segment.deleted ? ' deleted' : ''}`;
     const time = document.createElement('button');
     time.className = 'sentence-time';
     time.textContent = fmt(segment.start);
@@ -375,8 +369,10 @@ player.addEventListener('loadedmetadata', () => { player.currentTime = Number(pl
 player.addEventListener('timeupdate', () => {
   const clip = currentVideo();
   $('#timeReadout').textContent = `${fmt(player.currentTime)} / ${fmt(sequenceDuration())}`;
+  const deletedSegment = state.transcript.segments.find((segment) => segment.deleted && player.currentTime >= segment.start && player.currentTime < segment.end);
   const deletedWord = allWords().find((word) => word.deleted && player.currentTime >= word.start && player.currentTime < word.end);
   const appliedCut = state.cuts.find((cut) => cut.assetId === clip?.assetId && player.currentTime >= cut.start && player.currentTime < cut.end);
+  if (deletedSegment) { player.currentTime = deletedSegment.end; return; }
   if (deletedWord) { player.currentTime = deletedWord.end; return; }
   if (appliedCut) { player.currentTime = appliedCut.end; return; }
   if (clip && player.currentTime >= clip.sourceEnd - .03) loadClip(currentIndex + 1);
@@ -390,7 +386,7 @@ $('#nextClip').onclick = () => loadClip(currentIndex + 1);
 $('#splitBtn').onclick = splitCurrent;
 $('#deleteWordsBtn').onclick = () => toggleWords(true);
 $('#restoreWordsBtn').onclick = () => toggleWords(false);
-$('#selectAllBtn').onclick = () => { const clip = currentVideo(); if (!clip) return; selectedWords = new Set(allWords().filter((word) => word.start >= clip.sourceStart && word.end <= clip.sourceEnd).map((word) => word.id)); renderTranscript(); };
+$('#selectAllBtn').onclick = () => { const segment = state.transcript.segments.find((item) => player.currentTime >= item.start && player.currentTime < item.end); if (!segment) return toast('请先播放或定位到一句话'); selectedWords = new Set(segment.words.map((word) => word.id)); renderTranscript(); };
 $('#zoomInput').oninput = (event) => { pixelsPerSecond = Number(event.target.value); renderTimeline(); };
 $('#undoBtn').onclick = undo;
 $('#redoBtn').onclick = redo;

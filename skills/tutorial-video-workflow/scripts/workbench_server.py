@@ -30,13 +30,15 @@ def validate(data: Any) -> dict[str, Any]:
             raise ValueError(f"track is missing: {name}")
     data.setdefault("jianyingExport", {"status": "not_configured", "templatePath": None, "lastRequest": None})
     data.setdefault("cuts", [])
-    data.setdefault("roughCutSuggestions", [])
+    for segment in data.get("transcript", {}).get("segments", []):
+        segment.setdefault("deleted", False)
     return data
 
 
 def deleted_ranges(data: dict[str, Any]) -> list[tuple[float, float]]:
     transcript_asset = data.get("transcript", {}).get("assetId")
-    ranges = [(float(w["start"]), float(w["end"])) for s in data["transcript"]["segments"] for w in s["words"] if w.get("deleted")]
+    ranges = [(float(s["start"]), float(s["end"])) for s in data["transcript"]["segments"] if s.get("deleted")]
+    ranges.extend((float(w["start"]), float(w["end"])) for s in data["transcript"]["segments"] for w in s["words"] if w.get("deleted"))
     ranges.extend((float(cut["start"]), float(cut["end"])) for cut in data.get("cuts", []) if not transcript_asset or cut.get("assetId") == transcript_asset)
     ranges.sort()
     merged: list[list[float]] = []

@@ -39,28 +39,23 @@ def normalize_segments(raw: dict[str, Any]) -> list[dict[str, Any]]:
             })
         if not words and segment.get("text"):
             words = [{"id": f"w-{si}-1", "text": str(segment["text"]), "start": start, "end": end, "deleted": False}]
-        output.append({"id": f"s-{si}", "start": start, "end": end, "words": words})
+        output.append({"id": f"s-{si}", "start": start, "end": end, "deleted": False, "words": words})
     return output
 
 
-def rough_cut_suggestions(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    words = [word for segment in segments for word in segment["words"]]
-    suggestions: list[dict[str, Any]] = []
-    filler_words = {"嗯", "呃", "额", "然后呢", "所以呢"}
-    for index, word in enumerate(words, 1):
-        if word["text"].strip() in filler_words:
-            suggestions.append({
-                "id": f"filler-{index}", "type": "filler", "start": word["start"], "end": word["end"],
-                "label": f"检查口头词“{word['text']}”", "reason": "可能影响节奏，但必须试听确认", "status": "pending",
-            })
-    for index, (left, right) in enumerate(zip(words, words[1:]), 1):
-        gap = float(right["start"]) - float(left["end"])
-        if gap >= 0.65:
-            suggestions.append({
-                "id": f"pause-{index}", "type": "pause", "start": left["end"], "end": right["start"],
-                "label": f"压缩 {gap:.1f} 秒停顿", "reason": "说话间隔较长，建议试听后决定", "status": "pending",
-            })
-    return suggestions[:12]
+def load_auto_cuts(path: Path | None, asset_id: str) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = raw.get("cuts", []) if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        raise ValueError("auto cut list must be a list or an object containing cuts")
+    cuts = []
+    for index, item in enumerate(items, 1):
+        start, end = float(item["start"]), float(item["end"])
+        if end > start:
+            cuts.append({"id": str(item.get("id", f"auto-cut-{index}")), "assetId": str(item.get("assetId", asset_id)), "start": start, "end": end})
+    return cuts
 
 
 def main() -> int:
@@ -68,17 +63,21 @@ def main() -> int:
     parser.add_argument("--project", required=True, type=Path)
     parser.add_argument("--media", required=True, action="append", type=Path, help="Repeat for every confirmed media file; the first is primary.")
     parser.add_argument("--transcript", required=True, type=Path)
+    parser.add_argument("--auto-cut-list", type=Path, help="Optional JSON cuts already produced by the automatic rough-cut stage.")
     parser.add_argument("--title")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     project = args.project.expanduser().resolve()
     media_files = [path.expanduser().resolve() for path in args.media]
     transcript = args.transcript.expanduser().resolve()
+    auto_cut_list = args.auto_cut_list.expanduser().resolve() if args.auto_cut_list else None
     missing = next((path for path in media_files if not path.is_file()), None)
     if missing:
         parser.error(f"media not found: {missing}")
     if not transcript.is_file():
         parser.error(f"transcript not found: {transcript}")
+    if auto_cut_list and not auto_cut_list.is_file():
+        parser.error(f"auto cut list not found: {auto_cut_list}")
     output = project / "workbench" / "project.json"
     if output.exists() and not args.force:
         parser.error(f"workbench already exists: {output}; use --force to archive and recreate it")
@@ -118,8 +117,7 @@ def main() -> int:
         } for index, path in enumerate(media_files, 1)],
         "transcript": {"language": "zh", "assetId": asset_id, "segments": segments},
         "tracks": {"video": clips, "audio": audio, "captions": captions},
-        "cuts": [],
-        "roughCutSuggestions": rough_cut_suggestions(segments),
+        "cuts": load_auto_cuts(auto_cut_list, asset_id),
         "jianyingExport": {"status": "not_configured", "templatePath": None, "lastRequest": None},
         "history": {"confirmedRevision": None},
     }
