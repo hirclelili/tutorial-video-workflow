@@ -63,16 +63,26 @@ def main() -> int:
     if not segments:
         parser.error("transcript contains no segments")
     asset_id = "primary"
-    clips = []
-    audio = []
+    timeline_start = min(segment["start"] for segment in segments)
+    timeline_end = max(segment["end"] for segment in segments)
+    clips = [{
+        "id": "v-1", "assetId": asset_id, "label": media.stem,
+        "sourceStart": timeline_start, "sourceEnd": timeline_end,
+        "enabled": True, "linkId": "rough-1", "speed": 1.0, "volume": 1.0,
+    }]
+    audio = [{
+        "id": "a-1", "assetId": asset_id, "label": f"{media.stem} 音频",
+        "sourceStart": timeline_start, "sourceEnd": timeline_end,
+        "enabled": True, "linkId": "rough-1", "volume": 1.0,
+    }]
     captions = []
     for index, segment in enumerate(segments, 1):
-        link = f"rough-{index}"
         label = "".join(word["text"] for word in segment["words"])[:24] or f"片段 {index}"
-        base = {"sourceStart": segment["start"], "sourceEnd": segment["end"], "enabled": True, "linkId": link}
-        clips.append({"id": f"v-{index}", "assetId": asset_id, "label": label, "speed": 1.0, "volume": 1.0, **base})
-        audio.append({"id": f"a-{index}", "assetId": asset_id, "label": label, "volume": 1.0, **base})
-        captions.append({"id": f"c-{index}", "text": "".join(w["text"] for w in segment["words"]), **base})
+        captions.append({
+            "id": f"c-{index}", "text": "".join(w["text"] for w in segment["words"]),
+            "sourceStart": segment["start"], "sourceEnd": segment["end"],
+            "enabled": True, "linkId": f"caption-{index}", "label": label,
+        })
     now = datetime.now(timezone.utc).isoformat()
     data = {
         "schemaVersion": 1, "projectId": str(uuid.uuid4()), "title": args.title or media.stem,
@@ -80,6 +90,7 @@ def main() -> int:
         "assets": [{"id": asset_id, "name": media.name, "path": str(media), "type": "video", "duration": probe_duration(media)}],
         "transcript": {"language": "zh", "segments": segments},
         "tracks": {"video": clips, "audio": audio, "captions": captions},
+        "jianyingExport": {"status": "not_configured", "templatePath": None, "lastRequest": None},
         "history": {"confirmedRevision": None},
     }
     output.parent.mkdir(parents=True, exist_ok=True)

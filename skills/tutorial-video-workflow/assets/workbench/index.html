@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>视频粗剪工作台</title>
-  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/styles.css?v=4">
 </head>
 <body>
   <header>
@@ -17,6 +17,7 @@
       <button id="undoBtn" class="ghost">撤销</button>
       <button id="redoBtn" class="ghost">重做</button>
       <button id="exportBtn" class="primary">导出审片视频</button>
+      <button id="jianyingBtn" class="primary">导出剪映工程</button>
     </div>
   </header>
 
@@ -76,6 +77,13 @@
   </main>
 
   <div id="toast" class="toast"></div>
-  <script src="/assets/app.js"></script>
+  <div id="exportDialog" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
+      <h2 id="exportDialogTitle">剪映工程导出</h2>
+      <p id="exportDialogText"></p>
+      <button id="closeDialog" class="primary">知道了</button>
+    </div>
+  </div>
+  <script src="/assets/app.js?v=4"></script>
 </body>
 </html>

@@ -28,6 +28,7 @@ def validate(data: Any) -> dict[str, Any]:
     for name in ("video", "audio", "captions"):
         if not isinstance(data["tracks"].get(name), list):
             raise ValueError(f"track is missing: {name}")
+    data.setdefault("jianyingExport", {"status": "not_configured", "templatePath": None, "lastRequest": None})
     return data
 
 
@@ -164,13 +165,20 @@ def make_handler(project_file: Path, asset_root: Path):
             print(f"[workbench] {fmt % args}")
 
         def send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
-            self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
         def json_response(self, value: Any, status: int = 200) -> None:
             self.send_bytes(json.dumps(value, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
 
         def load_project(self) -> dict[str, Any]:
             return validate(json.loads(project_file.read_text(encoding="utf-8")))
+
+        def persist_project(self, data: dict[str, Any]) -> None:
+            revisions=project_file.parent/"revisions"; revisions.mkdir(exist_ok=True)
+            if project_file.exists(): shutil.copy2(project_file,revisions/f"project-{int(time.time()*1000)}.json")
+            fd,temp=tempfile.mkstemp(prefix="workbench-",suffix=".json",dir=project_file.parent)
+            with os.fdopen(fd,"w",encoding="utf-8") as f: json.dump(data,f,ensure_ascii=False,indent=2); f.write("\n")
+            os.replace(temp,project_file)
 
         def do_GET(self) -> None:
             path = urlparse(self.path).path
@@ -193,7 +201,7 @@ def make_handler(project_file: Path, asset_root: Path):
             size = target.stat().st_size; start, end = 0, size - 1; status = HTTPStatus.OK
             if ranges and self.headers.get("Range", "").startswith("bytes="):
                 spec = self.headers["Range"][6:].split(",", 1)[0]; left, right = spec.split("-", 1); start = int(left or 0); end = min(int(right) if right else size - 1, size - 1); status = HTTPStatus.PARTIAL_CONTENT
-            self.send_response(status); self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream"); self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(end-start+1))
+            self.send_response(status); self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream"); self.send_header("Cache-Control", "no-store"); self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(end-start+1))
             if status == HTTPStatus.PARTIAL_CONTENT:self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             self.end_headers()
             with target.open("rb") as f:
@@ -211,15 +219,23 @@ def make_handler(project_file: Path, asset_root: Path):
             if urlparse(self.path).path != "/api/project": return self.json_response({"error":"not found"},404)
             try:
                 length=int(self.headers.get("Content-Length","0")); data=validate(json.loads(self.rfile.read(length))); project_file.parent.mkdir(parents=True,exist_ok=True)
-                revisions=project_file.parent/"revisions"; revisions.mkdir(exist_ok=True)
-                if project_file.exists(): shutil.copy2(project_file,revisions/f"project-{int(time.time()*1000)}.json")
-                fd,temp=tempfile.mkstemp(prefix="workbench-",suffix=".json",dir=project_file.parent)
-                with os.fdopen(fd,"w",encoding="utf-8") as f: json.dump(data,f,ensure_ascii=False,indent=2); f.write("\n")
-                os.replace(temp,project_file); self.json_response({"saved":True})
+                self.persist_project(data); self.json_response({"saved":True})
             except (ValueError,json.JSONDecodeError,OSError) as exc:self.json_response({"error":str(exc)},400)
 
         def do_POST(self) -> None:
-            if urlparse(self.path).path != "/api/export-review": return self.json_response({"error":"not found"},404)
+            path=urlparse(self.path).path
+            if path == "/api/export-jianying":
+                data=self.load_project()
+                if data.get("status") != "confirmed":
+                    return self.json_response({"error":"请先点击“确认当前剪辑”，再导出剪映工程。"},409)
+                request_dir=project_root/"workflow";request_dir.mkdir(parents=True,exist_ok=True);request_path=request_dir/"jianying_export_request.json"
+                request={"requestedAt":time.strftime("%Y-%m-%dT%H:%M:%S%z"),"workbenchProject":str(project_file),"status":"waiting_for_native_template","templatePath":data["jianyingExport"].get("templatePath"),"requirements":["editable_video_track","editable_audio_track","editable_caption_track","self_contained_media"]}
+                request_path.write_text(json.dumps(request,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+                data["jianyingExport"].update({"status":"waiting_for_native_template","lastRequest":str(request_path)});self.persist_project(data)
+                if not data["jianyingExport"].get("templatePath"):
+                    return self.json_response({"error":"导出请求已保存。请先在当前剪映版本中新建一个空白项目，并让 Codex 将它设置为原生模板；之后再次点击此按钮。","request":str(request_path)},409)
+                return self.json_response({"error":"已找到原生模板，但当前环境还没有可验证的 CapCut Mate 导出器。不会使用已知与剪映 10.9 不兼容的旧导出器。","request":str(request_path)},501)
+            if path != "/api/export-review": return self.json_response({"error":"not found"},404)
             try:
                 output=export_review(self.load_project(),project_root); self.json_response({"file":str(output)})
             except (RuntimeError,OSError,subprocess.SubprocessError) as exc:self.json_response({"error":str(exc)},500)
