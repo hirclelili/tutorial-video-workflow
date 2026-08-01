@@ -25,10 +25,12 @@ project/
 
 ## 时间线记录
 
+`project.json` 必须先记录用户确认的请求：目标、主处理文件、经确认的辅助素材、输出数量和确认状态。默认输出数量为 1。
+
 每个片段至少记录：
 
 - 稳定 ID；
-- 角色：narration、screen、talking_head、broll、caption、motion；
+- 角色：primary 或按所选路线使用 narration、screen、talking_head、broll、caption、motion 等内部标签；
 - 来源文件绝对路径；
 - 源入点和源出点；
 - 输出时间线起点和时长；
@@ -39,6 +41,8 @@ project/
 - 生成原因或用户确认记录。
 
 ## 匹配策略
+
+仅在所选路线需要画面与语音匹配时应用本节。
 
 综合口播语义、录屏界面文字、操作变化和时间限制进行匹配。不要仅凭文件名或单一关键词匹配。
 

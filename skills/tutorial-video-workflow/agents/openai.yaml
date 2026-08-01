@@ -1,4 +1,4 @@
 interface:
-  display_name: "教程视频工作流"
-  short_description: "从 Codex 粗剪到 OpenChatCut 与剪映精剪交付"
-  default_prompt: "Use $tutorial-video-workflow to turn this folder of narration, screen recordings, and talking-head footage into a verified editable JianYing draft, then hand it to OpenChatCut for visual refinement."
+  display_name: "可编辑视频工作流"
+  short_description: "先确认目标与一个主视频，再自动选择剪辑流程"
+  default_prompt: "Use $tutorial-video-workflow to inspect this folder without modifying it, ask what I want to make, and let me confirm one primary media file before choosing a workflow."
