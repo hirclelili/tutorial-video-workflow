@@ -59,6 +59,7 @@ def main() -> int:
 
     materials = collect_materials(content)
     missing_media: list[str] = []
+    external_media: list[str] = []
     media_count = 0
     text_count = 0
     for material in materials:
@@ -67,10 +68,21 @@ def main() -> int:
         raw_path = material.get("path")
         if isinstance(raw_path, str) and raw_path:
             media_count += 1
-            if not Path(raw_path).expanduser().is_file():
+            media_path = Path(raw_path).expanduser()
+            if not media_path.is_absolute():
+                media_path = (draft / media_path).resolve()
+            else:
+                media_path = media_path.resolve()
+            if not media_path.is_file():
                 missing_media.append(raw_path)
+            try:
+                media_path.relative_to(draft)
+            except ValueError:
+                external_media.append(raw_path)
     if missing_media:
         errors.extend(f"missing referenced media: {path}" for path in missing_media)
+    if external_media:
+        errors.extend(f"media reference is outside project package: {path}" for path in external_media)
     if text_count == 0:
         warnings.append("no editable text materials found; captions may be absent or baked")
     if media_count == 0:
@@ -87,6 +99,8 @@ def main() -> int:
         "draft": str(draft),
         "static_pass": not errors,
         "manual_open_required": True,
+        "manual_reopen_required": True,
+        "compatibility_verified": False,
         "summary": {
             "tracks": len(tracks),
             "segments": len(segments),
@@ -100,8 +114,8 @@ def main() -> int:
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"Static validation: {'PASS' if not errors else 'FAIL'}")
-    print("Manual open in the target JianYing/CapCut version is still required.")
+    print(f"Project package structure check: {'PASS' if not errors else 'FAIL'}")
+    print("Compatibility is NOT verified by this check. Manual open, save, close, and reopen are required.")
     print(f"Report: {report_path}")
     return 0 if not errors else 2
 

@@ -8,6 +8,7 @@ project/
 │   ├── project.json
 │   ├── preflight.json
 │   ├── capcut_v1_validation.json
+│   ├── capcut_template.json
 │   ├── reviews.json
 │   └── openchatcut_changes.json
 ├── work/
@@ -22,7 +23,7 @@ project/
     └── capcut_v2_refined/
 ```
 
-不要把原素材复制进上述目录，除非用户明确要求。默认在 `project.json` 中记录绝对来源路径。
+工作区默认只记录原素材绝对路径，不修改原素材。正式剪映工程包必须把它引用的媒体复制到自身资源目录，使工程包不依赖临时目录或原素材路径。
 
 ## 时间线记录
 
@@ -61,6 +62,6 @@ project/
 
 ## 版本规则
 
-永不覆盖 `verified` 版本。每个剪映版本同时记录：生成时间、来源配置、静态验证报告、实际打开验证状态和已知损失。
+永不覆盖 `verified` 版本。每个剪映版本同时记录：生成时间、来源配置、目标剪映版本、原生模板副本来源、CapCut Mate 版本、结构验证报告、实际打开与重开验证状态和已知损失。
 
 所有适用阶段都必须在 `reviews.json` 中留下明确的用户决定。用户要求修改后保留旧预览并递增版本。

@@ -1,6 +1,6 @@
 ---
 name: tutorial-video-workflow
-description: Orchestrate a single editable video project from an arbitrary mixed folder of video, audio, image, subtitle, or existing project files. Use when Codex must first ask the user's goal, confirm one exact primary media file, choose a fitting workflow such as talking-head cleanup, tutorial, montage, interview, podcast, long-to-short, voice-over, or existing-project refinement, and deliver a verified editable JianYing/CapCut draft with optional OpenChatCut refinement.
+description: Orchestrate a single editable video project from an arbitrary mixed folder of video, audio, image, subtitle, or existing project files. Use when Codex must first ask the user's goal, confirm one exact primary media file, choose a fitting workflow such as talking-head cleanup, tutorial, montage, interview, podcast, long-to-short, voice-over, or existing-project refinement, and deliver a self-contained editable JianYing/CapCut project package with matched timeline, tracks, captions, and media, plus optional OpenChatCut refinement.
 ---
 
 # Editable Video Workflow
@@ -10,7 +10,7 @@ description: Orchestrate a single editable video project from an arbitrary mixed
 ## 核心约束
 
 1. 保持原素材只读；只在项目目录内创建派生文件。
-2. 先生成并验证剪映 V1，再开始 OpenChatCut 交接。
+2. 先生成并实际打开验证剪映工程包 V1，再开始 OpenChatCut 交接。
 3. 不因 OpenChatCut 不可用或回写失败而阻塞剪映 V1。
 4. 保持字幕为可编辑文本，尽量保持视频、音频、录屏和画中画分轨。
 5. 只烘焙剪映无法稳定表达的复杂 Remotion 动效，并将每个烘焙结果作为独立素材交付。
@@ -104,9 +104,21 @@ python3 scripts/init_project.py \
 
 把关键决定持续写入 `workflow/project.json`，不要只留在对话里。详细交付契约见 [references/workflow-contract.md](references/workflow-contract.md)。
 
-## 阶段二：剪映 V1 门禁
+## 阶段二：可编辑剪映工程包 V1
 
-使用 `video-editing` Skill 当前提供的剪映导出器生成 `deliverables/capcut_v1_rough_cut/`，然后运行：
+读取 [references/capcut-project-package.md](references/capcut-project-package.md) 并按其中的低自由度流程交付。正式交付不是一组待导入素材，也不是单个合成 MP4，而是一个自包含的可编辑剪映工程包：素材已经按时间线匹配，视频、音频、字幕、录屏、画中画和可替换动效保持合理分轨。
+
+核心工具关系固定为：
+
+1. Whisper 生成带时间戳的口播文字。
+2. FFmpeg/ffprobe 切分、变速、提取和标准化媒体，生成独立可替换的分段素材。
+3. Remotion 只把复杂开场或讲解动效渲染为独立 MP4 素材。
+4. Python 读取统一时间线配置、组织素材与轨道、调用 CapCut Mate、重写包内路径并完成打包。
+5. CapCut Mate 生成与目标剪映结构匹配的草稿文件，包括时间线、轨道、素材位置、缩放、音量和字幕等信息。
+
+不得凭空生成通用 `draft_content.json` 并把它当成兼容工程。优先让用户选择一个由其当前剪映版本新建的空白工程作为原生模板；复制模板后再注入时间线，绝不修改原模板。若 `video-editing` Skill 或 CapCut Mate 明确支持并已验证当前目标版本，可使用其版本化模板代替用户空白模板。
+
+生成 `deliverables/capcut_v1_rough_cut/` 后运行：
 
 ```bash
 python3 scripts/validate_capcut_draft.py \
@@ -114,7 +126,7 @@ python3 scripts/validate_capcut_draft.py \
   --report workflow/capcut_v1_validation.json
 ```
 
-静态检查通过后，要求用户在目标剪映版本中实际打开工程。只有用户确认以下项目后，才把 V1 标记为 `verified`：
+结构检查通过后，要求用户把整个工程包放入剪映草稿目录（或使用当前版本支持的导入方式），在目标剪映版本中实际打开。只有用户确认以下项目后，才把 V1 标记为 `verified`：
 
 - 草稿出现在剪映项目列表并可打开；
 - 素材没有丢失，时长和顺序正确；
@@ -125,7 +137,7 @@ python3 scripts/validate_capcut_draft.py \
 
 在要求用户打开剪映前，先提供与 V1 时间线一致的低码率审片代理。代理通过不等于草稿兼容性通过，两项都要记录。
 
-静态验证不等于剪映兼容性验证。不要声称未实际打开的工程“已通过”。
+结构验证不等于剪映兼容性验证。报告中使用“工程包结构检查通过”，不要写“剪映草稿已生成并可打开”或“兼容性通过”。用户实际打开、保存、关闭并重新打开后，才能称为“可用的可编辑剪映工程包”。如果打不开，保留失败包和报告，回到原生模板/版本匹配步骤修复；不要退化成普通素材包并宣称完成。
 
 ## 阶段三：OpenChatCut 精剪补充
 
@@ -156,8 +168,8 @@ python3 scripts/validate_capcut_draft.py \
 
 仅在以下条件满足时报告完成：
 
-- 至少存在一个静态检查通过的剪映草稿版本；
-- 用户已被明确要求在剪映中实际打开验证；
+- 至少存在一个结构检查通过、自包含且素材已匹配的剪映工程包版本；
+- 用户已在目标剪映版本中实际打开、保存、关闭并重新打开该工程包；
 - 原素材未被修改；
 - 所有烘焙素材独立可替换；
 - OpenChatCut 失败不会破坏剪映保底版本；
