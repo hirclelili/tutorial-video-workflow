@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create reusable workbench data from one confirmed media file and word transcript."""
+"""Create reusable workbench data from confirmed primary and supporting media."""
 
 from __future__ import annotations
 
@@ -43,17 +43,40 @@ def normalize_segments(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return output
 
 
+def rough_cut_suggestions(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    words = [word for segment in segments for word in segment["words"]]
+    suggestions: list[dict[str, Any]] = []
+    filler_words = {"嗯", "呃", "额", "然后呢", "所以呢"}
+    for index, word in enumerate(words, 1):
+        if word["text"].strip() in filler_words:
+            suggestions.append({
+                "id": f"filler-{index}", "type": "filler", "start": word["start"], "end": word["end"],
+                "label": f"检查口头词“{word['text']}”", "reason": "可能影响节奏，但必须试听确认", "status": "pending",
+            })
+    for index, (left, right) in enumerate(zip(words, words[1:]), 1):
+        gap = float(right["start"]) - float(left["end"])
+        if gap >= 0.65:
+            suggestions.append({
+                "id": f"pause-{index}", "type": "pause", "start": left["end"], "end": right["start"],
+                "label": f"压缩 {gap:.1f} 秒停顿", "reason": "说话间隔较长，建议试听后决定", "status": "pending",
+            })
+    return suggestions[:12]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True, type=Path)
-    parser.add_argument("--media", required=True, type=Path)
+    parser.add_argument("--media", required=True, action="append", type=Path, help="Repeat for every confirmed media file; the first is primary.")
     parser.add_argument("--transcript", required=True, type=Path)
     parser.add_argument("--title")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    project, media, transcript = (p.expanduser().resolve() for p in (args.project, args.media, args.transcript))
-    if not media.is_file():
-        parser.error(f"media not found: {media}")
+    project = args.project.expanduser().resolve()
+    media_files = [path.expanduser().resolve() for path in args.media]
+    transcript = args.transcript.expanduser().resolve()
+    missing = next((path for path in media_files if not path.is_file()), None)
+    if missing:
+        parser.error(f"media not found: {missing}")
     if not transcript.is_file():
         parser.error(f"transcript not found: {transcript}")
     output = project / "workbench" / "project.json"
@@ -62,7 +85,8 @@ def main() -> int:
     segments = normalize_segments(json.loads(transcript.read_text(encoding="utf-8")))
     if not segments:
         parser.error("transcript contains no segments")
-    asset_id = "primary"
+    media = media_files[0]
+    asset_id = "media-1"
     timeline_start = min(segment["start"] for segment in segments)
     timeline_end = max(segment["end"] for segment in segments)
     clips = [{
@@ -85,11 +109,17 @@ def main() -> int:
         })
     now = datetime.now(timezone.utc).isoformat()
     data = {
-        "schemaVersion": 1, "projectId": str(uuid.uuid4()), "title": args.title or media.stem,
+        "schemaVersion": 2, "projectId": str(uuid.uuid4()), "title": args.title or media.stem,
         "createdAt": now, "updatedAt": now, "status": "editing",
-        "assets": [{"id": asset_id, "name": media.name, "path": str(media), "type": "video", "duration": probe_duration(media)}],
-        "transcript": {"language": "zh", "segments": segments},
+        "assets": [{
+            "id": f"media-{index}", "name": path.name, "path": str(path), "type": "video",
+            "duration": probe_duration(path), "role": "primary" if index == 1 else "supporting",
+            "inTimeline": index == 1,
+        } for index, path in enumerate(media_files, 1)],
+        "transcript": {"language": "zh", "assetId": asset_id, "segments": segments},
         "tracks": {"video": clips, "audio": audio, "captions": captions},
+        "cuts": [],
+        "roughCutSuggestions": rough_cut_suggestions(segments),
         "jianyingExport": {"status": "not_configured", "templatePath": None, "lastRequest": None},
         "history": {"confirmedRevision": None},
     }

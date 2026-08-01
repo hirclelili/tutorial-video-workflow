@@ -21,7 +21,7 @@ from urllib.parse import unquote, urlparse
 
 
 def validate(data: Any) -> dict[str, Any]:
-    if not isinstance(data, dict) or data.get("schemaVersion") != 1:
+    if not isinstance(data, dict) or data.get("schemaVersion") not in {1, 2}:
         raise ValueError("unsupported workbench project schema")
     if not isinstance(data.get("assets"), list) or not isinstance(data.get("tracks"), dict):
         raise ValueError("project is missing assets or tracks")
@@ -29,11 +29,16 @@ def validate(data: Any) -> dict[str, Any]:
         if not isinstance(data["tracks"].get(name), list):
             raise ValueError(f"track is missing: {name}")
     data.setdefault("jianyingExport", {"status": "not_configured", "templatePath": None, "lastRequest": None})
+    data.setdefault("cuts", [])
+    data.setdefault("roughCutSuggestions", [])
     return data
 
 
 def deleted_ranges(data: dict[str, Any]) -> list[tuple[float, float]]:
-    ranges = sorted((float(w["start"]), float(w["end"])) for s in data["transcript"]["segments"] for w in s["words"] if w.get("deleted"))
+    transcript_asset = data.get("transcript", {}).get("assetId")
+    ranges = [(float(w["start"]), float(w["end"])) for s in data["transcript"]["segments"] for w in s["words"] if w.get("deleted")]
+    ranges.extend((float(cut["start"]), float(cut["end"])) for cut in data.get("cuts", []) if not transcript_asset or cut.get("assetId") == transcript_asset)
+    ranges.sort()
     merged: list[list[float]] = []
     for start, end in ranges:
         if merged and start <= merged[-1][1] + .03:
@@ -50,7 +55,8 @@ def effective_chunks(data: dict[str, Any]) -> list[dict[str, Any]]:
         if clip.get("enabled") is False:
             continue
         parts = [(float(clip["sourceStart"]), float(clip["sourceEnd"]))]
-        for cut_start, cut_end in cuts:
+        clip_cuts = cuts if clip.get("assetId") == data.get("transcript", {}).get("assetId") else []
+        for cut_start, cut_end in clip_cuts:
             next_parts = []
             for start, end in parts:
                 if cut_end <= start or cut_start >= end:
@@ -96,14 +102,15 @@ def srt_time(seconds: float) -> str:
 
 def write_srt(data: dict[str, Any], chunks: list[dict[str, Any]], target: Path) -> None:
     all_words = [w for segment in data["transcript"]["segments"] for w in segment["words"]]
+    transcript_asset = data.get("transcript", {}).get("assetId")
     captions = {c.get("linkId"): c for c in data["tracks"]["captions"] if c.get("enabled") is not False}
     cursor = 0.0
     entries = []
     emitted_edited: set[str] = set()
     for chunk in chunks:
         speed = chunk["speed"]
-        original = "".join(w["text"] for w in all_words if w["start"] >= chunk["clipStart"] - .02 and w["end"] <= chunk["clipEnd"] + .02).strip()
-        active = "".join(w["text"] for w in all_words if not w.get("deleted") and w["start"] >= chunk["start"] - .02 and w["end"] <= chunk["end"] + .02).strip()
+        original = "" if chunk["assetId"] != transcript_asset else "".join(w["text"] for w in all_words if w["start"] >= chunk["clipStart"] - .02 and w["end"] <= chunk["clipEnd"] + .02).strip()
+        active = "" if chunk["assetId"] != transcript_asset else "".join(w["text"] for w in all_words if not w.get("deleted") and w["start"] >= chunk["start"] - .02 and w["end"] <= chunk["end"] + .02).strip()
         edited = str(captions.get(chunk["linkId"], {}).get("text", "")).strip()
         custom = edited and edited != original
         text = edited if custom and chunk["linkId"] not in emitted_edited else active

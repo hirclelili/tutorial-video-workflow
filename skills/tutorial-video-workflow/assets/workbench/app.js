@@ -1,30 +1,406 @@
-const $=s=>document.querySelector(s);let state=null,history=[],future=[],selectedClip=null,selectedWords=new Set(),saveTimer=null,currentIndex=0;
-const player=$('#player');
-function clone(v){return JSON.parse(JSON.stringify(v))}function fmt(s){s=Math.max(0,Number(s)||0);return `${String(Math.floor(s/60)).padStart(2,'0')}:${(s%60).toFixed(2).padStart(5,'0')}`}
-function activeVideo(){return state.tracks.video.filter(c=>c.enabled!==false)}function duration(){return activeVideo().reduce((n,c)=>n+(c.sourceEnd-c.sourceStart)/(c.speed||1),0)}
-function checkpoint(){history.push(clone(state));if(history.length>80)history.shift();future=[]}function mutate(fn){checkpoint();fn();state.updatedAt=new Date().toISOString();render();scheduleSave()}
-function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
-async function load(){const r=await fetch('/api/project');if(!r.ok)throw Error(await r.text());state=await r.json();$('#projectTitle').textContent=state.title||'视频粗剪工作台';render();loadClip(0);$('#saveState').textContent='已载入';$('#saveState').classList.add('saved')}
-function scheduleSave(){clearTimeout(saveTimer);$('#saveState').textContent='保存中…';$('#saveState').classList.remove('saved');saveTimer=setTimeout(save,450)}async function save(){const r=await fetch('/api/project',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});if(!r.ok){$('#saveState').textContent='保存失败';return}$('#saveState').textContent='已自动保存';$('#saveState').classList.add('saved')}
-function loadClip(index,offset=0){const clips=activeVideo();if(!clips.length){player.removeAttribute('src');$('#emptyPlayer').style.display='block';return}if(index>=clips.length){player.pause();return}currentIndex=Math.max(0,index);const c=clips[currentIndex];selectedClip=c.id;player.dataset.pendingTime=String(Math.max(c.sourceStart,c.sourceStart+offset));player.src=`/api/media/${encodeURIComponent(c.assetId)}`;player.dataset.clipId=c.id;$('#emptyPlayer').style.display='none';render()}
-function currentClip(){return state.tracks.video.find(c=>c.id===selectedClip)||state.tracks.video.find(c=>c.id===player.dataset.clipId)}
-function currentItem(){return ['video','audio','captions'].flatMap(t=>state.tracks[t]).find(c=>c.id===selectedClip)}
-function render(){renderTranscript();renderTimeline();renderInspector();$('#durationBadge').textContent=`${duration().toFixed(1)} 秒`;$('#undoBtn').disabled=!history.length;$('#redoBtn').disabled=!future.length}
-function renderTranscript(){const root=$('#transcript');root.innerHTML='';for(const seg of state.transcript.segments){const row=document.createElement('div');row.className='sentence';row.dataset.id=seg.id;const tm=document.createElement('button');tm.className='sentence-time';tm.textContent=fmt(seg.start);tm.onclick=()=>seekSource(seg.start);row.append(tm);for(const w of seg.words){const b=document.createElement('button');b.className='word';b.textContent=w.text;if(w.deleted)b.classList.add('deleted');if(selectedWords.has(w.id))b.classList.add('selected');b.dataset.wordId=w.id;b.onclick=e=>{if(e.shiftKey&&selectedWords.size){selectRange(w.id)}else if(e.metaKey||e.ctrlKey){selectedWords.has(w.id)?selectedWords.delete(w.id):selectedWords.add(w.id)}else{selectedWords.clear();selectedWords.add(w.id);seekSource(w.start)}renderTranscript()};row.append(b)}root.append(row)}}
-function allWords(){return state.transcript.segments.flatMap(s=>s.words)}function selectRange(id){const words=allWords(),last=[...selectedWords].at(-1),a=words.findIndex(w=>w.id===last),b=words.findIndex(w=>w.id===id);if(a<0||b<0)return;for(let i=Math.min(a,b);i<=Math.max(a,b);i++)selectedWords.add(words[i].id)}
-function seekSource(time){const clips=activeVideo();const idx=clips.findIndex(c=>time>=c.sourceStart&&time<c.sourceEnd);if(idx>=0)loadClip(idx,time-clips[idx].sourceStart)}
-function renderTimeline(){const root=$('#timeline');root.innerHTML='';for(const [type,label] of [['video','视频'],['audio','音频'],['captions','字幕']]){const lane=document.createElement('div');lane.className='lane';lane.innerHTML=`<div class="lane-label">${label}</div>`;const clips=document.createElement('div');clips.className='lane-clips';for(const c of state.tracks[type]){const el=document.createElement('div');el.className=`clip ${type==='captions'?'caption':type}`+(c.id===selectedClip?' active':'')+(c.enabled===false?' deleted':'');el.draggable=type==='video';el.dataset.id=c.id;el.textContent=c.text||c.label||c.id;el.title=`${fmt(c.sourceStart)}–${fmt(c.sourceEnd)}`;el.onclick=()=>{if(type==='video'){selectedClip=c.id;const idx=activeVideo().findIndex(x=>x.id===c.id);if(idx>=0)loadClip(idx)}else{if(type==='captions')seekSource(c.sourceStart);selectedClip=c.id;render()}};el.ondragstart=e=>e.dataTransfer.setData('text/plain',c.id);el.ondragover=e=>e.preventDefault();el.ondrop=e=>{e.preventDefault();reorder(e.dataTransfer.getData('text/plain'),c.id)};clips.append(el)}lane.append(clips);root.append(lane)}}
-function reorder(from,to){if(from===to)return;mutate(()=>{const a=state.tracks.video,i=a.findIndex(c=>c.id===from),j=a.findIndex(c=>c.id===to);if(i<0||j<0)return;const [x]=a.splice(i,1);a.splice(j,0,x);syncLinkedOrder()})}
-function syncLinkedOrder(){const order=new Map(state.tracks.video.map((c,i)=>[c.linkId||c.id,i]));for(const t of ['audio','captions'])state.tracks[t].sort((a,b)=>(order.get(a.linkId)??9999)-(order.get(b.linkId)??9999))}
-function renderInspector(){const item=currentItem()||currentClip(),video=currentClip();$('#clipName').textContent=item?.label||item?.text||item?.id||'尚未选择';const cap=item&&state.tracks.captions.includes(item)?item:(video?captionFor(video):null);$('#captionText').value=cap?.text||'';$('#volumeInput').value=item?.volume??1;$('#speedInput').value=video?.speed??1;$('#toggleClipBtn').textContent=item?.enabled===false?'恢复当前片段':'删除当前片段';$('#captionText').disabled=!cap;$('#volumeInput').disabled=!item||item.volume===undefined;$('#speedInput').disabled=!video;$('#toggleClipBtn').disabled=!item;$('#splitBtn').disabled=!video}
-function captionFor(c){return state.tracks.captions.find(x=>player.currentTime>=x.sourceStart&&player.currentTime<x.sourceEnd)||state.tracks.captions.find(x=>x.sourceStart>=c.sourceStart&&x.sourceEnd<=c.sourceEnd)}
-function split(){const c=currentClip();if(!c)return;const at=player.currentTime;if(at<=c.sourceStart+.08||at>=c.sourceEnd-.08)return toast('请在片段中间位置拆分');mutate(()=>{const i=state.tracks.video.findIndex(x=>x.id===c.id),suffix=Date.now().toString(36),right={...clone(c),id:`${c.id}-${suffix}`,sourceStart:at,label:`${c.label||c.id} B`,linkId:`${c.linkId||c.id}-${suffix}`};c.sourceEnd=at;c.label=`${c.label||c.id} A`;state.tracks.video.splice(i+1,0,right);for(const type of ['audio','captions']){const linked=state.tracks[type].find(x=>x.linkId===(c.linkId||c.id));if(linked){const j=state.tracks[type].indexOf(linked),r={...clone(linked),id:`${linked.id}-${suffix}`,linkId:right.linkId,sourceStart:at};linked.sourceEnd=at;if(type==='captions')r.text=linked.text;state.tracks[type].splice(j+1,0,r)}}selectedClip=right.id});toast('已拆分片段')}
-function toggleWords(deleted){if(!selectedWords.size)return toast('请先选择文字');mutate(()=>{for(const w of allWords())if(selectedWords.has(w.id))w.deleted=deleted});toast(deleted?'已标记删除':'已恢复文字')}
-function undo(){if(!history.length)return;future.push(clone(state));state=history.pop();render();scheduleSave()}function redo(){if(!future.length)return;history.push(clone(state));state=future.pop();render();scheduleSave()}
-player.addEventListener('loadedmetadata',()=>{player.currentTime=Number(player.dataset.pendingTime||0);player.play().catch(()=>{})});player.addEventListener('timeupdate',()=>{const c=currentClip();$('#timeReadout').textContent=`${fmt(player.currentTime)} / ${fmt(duration())}`;const deleted=allWords().find(w=>w.deleted&&player.currentTime>=w.start&&player.currentTime<w.end);if(deleted){const contiguous=allWords().filter(w=>w.deleted&&w.start>=deleted.start-.02).reduce((end,w)=>w.start<=end+.04?Math.max(end,w.end):end,deleted.end);player.currentTime=contiguous;return}if(c&&player.currentTime>=c.sourceEnd-.03)loadClip(currentIndex+1);document.querySelectorAll('.word.playing').forEach(x=>x.classList.remove('playing'));const w=allWords().find(w=>!w.deleted&&player.currentTime>=w.start&&player.currentTime<w.end);if(w)document.querySelector(`[data-word-id="${CSS.escape(w.id)}"]`)?.classList.add('playing')});
-$('#prevClip').onclick=()=>loadClip(currentIndex-1);$('#nextClip').onclick=()=>loadClip(currentIndex+1);$('#splitBtn').onclick=split;$('#deleteWordsBtn').onclick=()=>toggleWords(true);$('#restoreWordsBtn').onclick=()=>toggleWords(false);$('#selectAllBtn').onclick=()=>{const c=currentClip();if(!c)return;selectedWords=new Set(allWords().filter(w=>w.start>=c.sourceStart&&w.end<=c.sourceEnd).map(w=>w.id));renderTranscript()};$('#undoBtn').onclick=undo;$('#redoBtn').onclick=redo;
-$('#toggleClipBtn').onclick=()=>{const item=currentItem()||currentClip();if(!item)return;const id=item.id,link=item.linkId||id,next=item.enabled===false,isVideo=state.tracks.video.includes(item);mutate(()=>{for(const type of ['video','audio','captions'])for(const c of state.tracks[type])if(c.id===id||(isVideo&&type!=='captions'&&c.linkId===link))c.enabled=next});toast(next?'片段已恢复':'片段已删除')};
-$('#captionText').onchange=e=>{const item=currentItem(),c=currentClip(),cap=item&&state.tracks.captions.includes(item)?item:(c?captionFor(c):null);if(cap)mutate(()=>cap.text=e.target.value)};$('#volumeInput').onchange=e=>{const item=currentItem()||currentClip();if(item&&item.volume!==undefined)mutate(()=>item.volume=Math.max(0,Math.min(2,Number(e.target.value)||0)))};$('#speedInput').onchange=e=>{const c=currentClip();if(c)mutate(()=>c.speed=Math.max(.25,Math.min(4,Number(e.target.value)||1)))};
-$('#confirmBtn').onclick=()=>mutate(()=>{state.status='confirmed';state.confirmedAt=new Date().toISOString()});$('#exportBtn').onclick=async()=>{await save();$('#exportBtn').disabled=true;$('#exportBtn').textContent='正在导出…';const r=await fetch('/api/export-review',{method:'POST'});const out=await r.json().catch(()=>({error:'导出失败'}));$('#exportBtn').disabled=false;$('#exportBtn').textContent='导出审片视频';toast(r.ok?`已导出：${out.file}`:out.error)};
-$('#jianyingBtn').onclick=async()=>{await save();const btn=$('#jianyingBtn');btn.disabled=true;btn.textContent='正在准备…';const r=await fetch('/api/export-jianying',{method:'POST'});const out=await r.json().catch(()=>({error:'剪映工程导出失败'}));btn.disabled=false;btn.textContent='导出剪映工程';$('#exportDialogText').textContent=r.ok?`工程包已生成：${out.path}`:(out.error||'暂时无法导出');$('#exportDialog').hidden=false};$('#closeDialog').onclick=()=>{$('#exportDialog').hidden=true};
-load().catch(e=>{$('#saveState').textContent='载入失败';toast(e.message)});
+const $ = (selector) => document.querySelector(selector);
+const player = $('#player');
+let state = null;
+let history = [];
+let future = [];
+let selectedId = null;
+let selectedWords = new Set();
+let saveTimer = null;
+let currentIndex = 0;
+let pixelsPerSecond = 20;
+
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const fmt = (seconds) => {
+  const value = Math.max(0, Number(seconds) || 0);
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${(value % 60).toFixed(2).padStart(5, '0')}`;
+};
+const clipDuration = (clip) => (clip.sourceEnd - clip.sourceStart) / (clip.speed || 1);
+const activeVideo = () => state.tracks.video.filter((clip) => clip.enabled !== false);
+function excludedRangesFor(clip) {
+  if (clip.assetId !== state.transcript.assetId) return [];
+  const ranges = [
+    ...allWords().filter((word) => word.deleted).map((word) => [word.start, word.end]),
+    ...state.cuts.filter((cut) => cut.assetId === clip.assetId).map((cut) => [cut.start, cut.end]),
+  ].filter(([start, end]) => end > clip.sourceStart && start < clip.sourceEnd)
+    .map(([start, end]) => [Math.max(start, clip.sourceStart), Math.min(end, clip.sourceEnd)])
+    .sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const range of ranges) {
+    if (merged.length && range[0] <= merged.at(-1)[1] + .02) merged.at(-1)[1] = Math.max(merged.at(-1)[1], range[1]);
+    else merged.push([...range]);
+  }
+  return merged;
+}
+const effectiveClipDuration = (clip) => clipDuration(clip) - excludedRangesFor(clip).reduce((total, [start, end]) => total + (end - start) / (clip.speed || 1), 0);
+const sequenceDuration = () => activeVideo().reduce((total, clip) => total + effectiveClipDuration(clip), 0);
+const allItems = () => ['video', 'audio', 'captions'].flatMap((type) => state.tracks[type]);
+const currentItem = () => allItems().find((item) => item.id === selectedId);
+const currentVideo = () => state.tracks.video.find((item) => item.id === selectedId) || state.tracks.video.find((item) => item.id === player.dataset.clipId);
+const allWords = () => state.transcript.segments.flatMap((segment) => segment.words);
+
+function checkpoint() {
+  history.push(clone(state));
+  if (history.length > 80) history.shift();
+  future = [];
+}
+
+function mutate(action) {
+  checkpoint();
+  action();
+  state.updatedAt = new Date().toISOString();
+  updateTimelinePositions();
+  render();
+  scheduleSave();
+}
+
+function toast(message) {
+  const element = $('#toast');
+  element.textContent = message;
+  element.classList.add('show');
+  setTimeout(() => element.classList.remove('show'), 1800);
+}
+
+async function load() {
+  const response = await fetch('/api/project');
+  if (!response.ok) throw new Error(await response.text());
+  state = await response.json();
+  state.cuts ||= [];
+  state.roughCutSuggestions ||= [];
+  $('#projectTitle').textContent = state.title || '视频粗剪工作台';
+  updateTimelinePositions();
+  render();
+  loadClip(0);
+  $('#saveState').textContent = '已载入';
+  $('#saveState').classList.add('saved');
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  $('#saveState').textContent = '保存中…';
+  $('#saveState').classList.remove('saved');
+  saveTimer = setTimeout(save, 420);
+}
+
+async function save() {
+  const response = await fetch('/api/project', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
+  $('#saveState').textContent = response.ok ? '已自动保存' : '保存失败';
+  $('#saveState').classList.toggle('saved', response.ok);
+}
+
+function updateTimelinePositions() {
+  let cursor = 0;
+  for (const clip of activeVideo()) {
+    clip.timelineStart = cursor;
+    const audio = state.tracks.audio.find((item) => item.linkId === clip.linkId);
+    if (audio) audio.timelineStart = cursor;
+    cursor += effectiveClipDuration(clip);
+  }
+  const transcriptAsset = state.transcript.assetId;
+  for (const caption of state.tracks.captions) {
+    const host = activeVideo().find((clip) => clip.assetId === transcriptAsset && caption.sourceStart >= clip.sourceStart && caption.sourceEnd <= clip.sourceEnd);
+    caption.timelineStart = host ? host.timelineStart + (caption.sourceStart - host.sourceStart) / (host.speed || 1) : null;
+  }
+  for (const asset of state.assets) asset.inTimeline = state.tracks.video.some((clip) => clip.assetId === asset.id && clip.enabled !== false);
+}
+
+function render() {
+  renderMediaBin();
+  renderSuggestions();
+  renderTranscript();
+  renderTimeline();
+  renderInspector();
+  $('#assetCount').textContent = state.assets.length;
+  $('#durationBadge').textContent = `${sequenceDuration().toFixed(1)} 秒`;
+  $('#undoBtn').disabled = !history.length;
+  $('#redoBtn').disabled = !future.length;
+}
+
+function renderMediaBin() {
+  const root = $('#mediaBin');
+  root.innerHTML = '';
+  for (const asset of state.assets) {
+    const card = document.createElement('article');
+    card.className = 'media-card';
+    const used = state.tracks.video.some((clip) => clip.assetId === asset.id && clip.enabled !== false);
+    card.innerHTML = `<div class="media-thumb">${asset.role === 'primary' ? 'MAIN' : 'VIDEO'}</div><div><div class="media-name" title="${asset.name}">${asset.name}</div><div class="media-meta">${fmt(asset.duration)} · ${asset.role === 'primary' ? '主素材' : '辅助素材'}</div><div class="media-actions"><button data-preview>预览</button><button data-add ${used ? 'disabled' : ''}>${used ? '已在时间线' : '加入主线'}</button></div></div>`;
+    card.querySelector('[data-preview]').onclick = () => previewAsset(asset);
+    card.querySelector('[data-add]').onclick = () => addAssetToTimeline(asset);
+    root.append(card);
+  }
+}
+
+function renderSuggestions() {
+  const root = $('#suggestions');
+  root.innerHTML = '';
+  if (!state.roughCutSuggestions.length) {
+    root.innerHTML = '<p class="panel-help">暂无自动建议。Codex 的建议必须由你确认后才会应用。</p>';
+    return;
+  }
+  for (const suggestion of state.roughCutSuggestions) {
+    const card = document.createElement('article');
+    card.className = `suggestion ${suggestion.status}`;
+    card.innerHTML = `<p>${suggestion.label}</p><small>${fmt(suggestion.start)}–${fmt(suggestion.end)} · ${suggestion.reason}</small><div class="media-actions"><button data-listen>试听</button><button data-apply>${suggestion.status === 'applied' ? '已应用' : '应用'}</button><button data-ignore>忽略</button></div>`;
+    card.querySelector('[data-listen]').onclick = () => seekSource(suggestion.start);
+    card.querySelector('[data-apply]').disabled = suggestion.status === 'applied';
+    card.querySelector('[data-apply]').onclick = () => applySuggestion(suggestion);
+    card.querySelector('[data-ignore]').onclick = () => mutate(() => { suggestion.status = 'ignored'; state.cuts = state.cuts.filter((cut) => cut.suggestionId !== suggestion.id); });
+    root.append(card);
+  }
+}
+
+function applySuggestion(suggestion) {
+  mutate(() => {
+    suggestion.status = 'applied';
+    if (!state.cuts.some((cut) => cut.suggestionId === suggestion.id)) state.cuts.push({ id: `cut-${suggestion.id}`, suggestionId: suggestion.id, assetId: state.transcript.assetId, start: suggestion.start, end: suggestion.end });
+  });
+}
+
+function previewAsset(asset) {
+  selectedId = null;
+  player.dataset.clipId = '';
+  player.dataset.pendingTime = '0';
+  player.src = `/api/media/${encodeURIComponent(asset.id)}`;
+  $('#emptyPlayer').style.display = 'none';
+  renderInspector();
+}
+
+function addAssetToTimeline(asset) {
+  if (!asset.duration) return toast('无法读取素材时长');
+  mutate(() => {
+    const suffix = Date.now().toString(36);
+    const linkId = `media-link-${suffix}`;
+    const video = { id: `v-${suffix}`, assetId: asset.id, label: asset.name, sourceStart: 0, sourceEnd: asset.duration, enabled: true, linkId, speed: 1, volume: 1 };
+    const audio = { id: `a-${suffix}`, assetId: asset.id, label: `${asset.name} 音频`, sourceStart: 0, sourceEnd: asset.duration, enabled: true, linkId, volume: 1 };
+    state.tracks.video.push(video);
+    state.tracks.audio.push(audio);
+    selectedId = video.id;
+  });
+  toast('已加入主时间线末尾');
+}
+
+function loadClip(index, offset = 0) {
+  const clips = activeVideo();
+  if (!clips.length) return;
+  if (index >= clips.length) return player.pause();
+  currentIndex = Math.max(0, index);
+  const clip = clips[currentIndex];
+  selectedId = clip.id;
+  player.dataset.pendingTime = String(Math.max(clip.sourceStart, clip.sourceStart + offset));
+  player.dataset.clipId = clip.id;
+  player.src = `/api/media/${encodeURIComponent(clip.assetId)}`;
+  $('#emptyPlayer').style.display = 'none';
+  render();
+}
+
+function renderTranscript() {
+  const root = $('#transcript');
+  root.innerHTML = '';
+  for (const segment of state.transcript.segments) {
+    const row = document.createElement('div');
+    row.className = 'sentence';
+    const time = document.createElement('button');
+    time.className = 'sentence-time';
+    time.textContent = fmt(segment.start);
+    time.onclick = () => seekSource(segment.start);
+    row.append(time);
+    for (const word of segment.words) {
+      const button = document.createElement('button');
+      button.className = `word${word.deleted ? ' deleted' : ''}${selectedWords.has(word.id) ? ' selected' : ''}`;
+      button.textContent = word.text;
+      button.dataset.wordId = word.id;
+      button.onclick = (event) => {
+        if (event.shiftKey && selectedWords.size) selectWordRange(word.id);
+        else if (event.metaKey || event.ctrlKey) selectedWords.has(word.id) ? selectedWords.delete(word.id) : selectedWords.add(word.id);
+        else { selectedWords.clear(); selectedWords.add(word.id); seekSource(word.start); }
+        renderTranscript();
+      };
+      row.append(button);
+    }
+    root.append(row);
+  }
+}
+
+function selectWordRange(id) {
+  const words = allWords();
+  const last = [...selectedWords].at(-1);
+  const a = words.findIndex((word) => word.id === last);
+  const b = words.findIndex((word) => word.id === id);
+  if (a < 0 || b < 0) return;
+  for (let index = Math.min(a, b); index <= Math.max(a, b); index++) selectedWords.add(words[index].id);
+}
+
+function seekSource(time) {
+  const index = activeVideo().findIndex((clip) => clip.assetId === state.transcript.assetId && time >= clip.sourceStart && time < clip.sourceEnd);
+  if (index >= 0) loadClip(index, time - activeVideo()[index].sourceStart);
+}
+
+function renderTimeline() {
+  const root = $('#timeline');
+  root.innerHTML = '';
+  const total = Math.max(sequenceDuration(), 30);
+  const canvasWidth = Math.max(total * pixelsPerSecond, root.clientWidth - 82);
+  const ruler = document.createElement('div');
+  ruler.className = 'ruler-row';
+  ruler.innerHTML = '<div class="track-label">TIME</div>';
+  const rulerCanvas = document.createElement('div');
+  rulerCanvas.className = 'track-canvas';
+  rulerCanvas.style.width = `${canvasWidth}px`;
+  for (let second = 0; second <= total; second += 5) {
+    const tick = document.createElement('span');
+    tick.className = 'tick';
+    tick.style.left = `${second * pixelsPerSecond}px`;
+    tick.textContent = fmt(second).slice(0, 5);
+    rulerCanvas.append(tick);
+  }
+  ruler.append(rulerCanvas);
+  root.append(ruler);
+
+  for (const [type, label] of [['video', 'V1 主视频'], ['audio', 'A1 原声'], ['captions', 'T1 字幕']]) {
+    const row = document.createElement('div');
+    row.className = 'track-row';
+    row.innerHTML = `<div class="track-label">${label}</div>`;
+    const canvas = document.createElement('div');
+    canvas.className = 'track-canvas';
+    canvas.style.width = `${canvasWidth}px`;
+    for (const clip of state.tracks[type]) {
+      if (clip.timelineStart == null) continue;
+      const element = document.createElement('div');
+      element.className = `timeline-clip ${type === 'captions' ? 'caption' : type}${clip.id === selectedId ? ' active' : ''}${clip.enabled === false ? ' deleted' : ''}`;
+      element.style.left = `${clip.timelineStart * pixelsPerSecond}px`;
+      element.style.width = `${Math.max(clipDuration(clip) * pixelsPerSecond, 28)}px`;
+      element.textContent = clip.text || clip.label || clip.id;
+      element.title = `${fmt(clip.timelineStart)} · ${fmt(clipDuration(clip))}`;
+      element.draggable = type === 'video';
+      element.onclick = () => selectTimelineItem(type, clip);
+      element.ondragstart = (event) => event.dataTransfer.setData('text/plain', clip.id);
+      element.ondragover = (event) => event.preventDefault();
+      element.ondrop = (event) => { event.preventDefault(); reorderVideo(event.dataTransfer.getData('text/plain'), clip.id); };
+      if (type === 'video') {
+        for (const [start, end] of excludedRangesFor(clip)) {
+          const mark = document.createElement('i');
+          mark.className = 'cut-mark';
+          mark.style.left = `${((start - clip.sourceStart) / (clip.sourceEnd - clip.sourceStart)) * 100}%`;
+          mark.style.width = `${Math.max(((end - start) / (clip.sourceEnd - clip.sourceStart)) * 100, .5)}%`;
+          element.append(mark);
+        }
+      }
+      canvas.append(element);
+    }
+    row.append(canvas);
+    root.append(row);
+  }
+}
+
+function selectTimelineItem(type, clip) {
+  if (type === 'video') {
+    const index = activeVideo().findIndex((item) => item.id === clip.id);
+    if (index >= 0) loadClip(index);
+  } else {
+    selectedId = clip.id;
+    if (type === 'captions') seekSource(clip.sourceStart);
+    selectedId = clip.id;
+    render();
+  }
+}
+
+function reorderVideo(from, to) {
+  if (from === to) return;
+  mutate(() => {
+    const clips = state.tracks.video;
+    const fromIndex = clips.findIndex((clip) => clip.id === from);
+    const toIndex = clips.findIndex((clip) => clip.id === to);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const [moved] = clips.splice(fromIndex, 1);
+    clips.splice(toIndex, 0, moved);
+    const audioOrder = new Map(clips.map((clip, index) => [clip.linkId, index]));
+    state.tracks.audio.sort((a, b) => (audioOrder.get(a.linkId) ?? 999) - (audioOrder.get(b.linkId) ?? 999));
+  });
+}
+
+function captionFor(video) {
+  return state.tracks.captions.find((caption) => player.currentTime >= caption.sourceStart && player.currentTime < caption.sourceEnd) || state.tracks.captions.find((caption) => caption.sourceStart >= video.sourceStart && caption.sourceEnd <= video.sourceEnd);
+}
+
+function renderInspector() {
+  const item = currentItem() || currentVideo();
+  const video = currentVideo();
+  const caption = item && state.tracks.captions.includes(item) ? item : video ? captionFor(video) : null;
+  $('#clipName').textContent = item?.label || item?.text || item?.id || '尚未选择';
+  $('#captionText').value = caption?.text || '';
+  $('#captionText').disabled = !caption;
+  $('#volumeInput').value = item?.volume ?? 1;
+  $('#volumeInput').disabled = !item || item.volume === undefined;
+  $('#speedInput').value = video?.speed ?? 1;
+  $('#speedInput').disabled = !video;
+  $('#toggleClipBtn').disabled = !item;
+  $('#toggleClipBtn').textContent = item?.enabled === false ? '恢复到主时间线' : '移出主时间线';
+  $('#splitBtn').disabled = !video;
+}
+
+function splitCurrent() {
+  const clip = currentVideo();
+  if (!clip) return;
+  const at = player.currentTime;
+  if (at <= clip.sourceStart + .08 || at >= clip.sourceEnd - .08) return toast('请在片段中间位置拆分');
+  mutate(() => {
+    const index = state.tracks.video.findIndex((item) => item.id === clip.id);
+    const suffix = Date.now().toString(36);
+    const originalLink = clip.linkId;
+    const rightLink = `${originalLink}-${suffix}`;
+    const right = { ...clone(clip), id: `${clip.id}-${suffix}`, sourceStart: at, label: `${clip.label} B`, linkId: rightLink };
+    clip.sourceEnd = at;
+    clip.label = `${clip.label} A`;
+    state.tracks.video.splice(index + 1, 0, right);
+    const audio = state.tracks.audio.find((item) => item.linkId === originalLink);
+    if (audio) {
+      const audioIndex = state.tracks.audio.indexOf(audio);
+      const rightAudio = { ...clone(audio), id: `${audio.id}-${suffix}`, sourceStart: at, linkId: rightLink, label: `${audio.label} B` };
+      audio.sourceEnd = at;
+      audio.label = `${audio.label} A`;
+      state.tracks.audio.splice(audioIndex + 1, 0, rightAudio);
+    }
+    selectedId = right.id;
+  });
+}
+
+function toggleWords(deleted) {
+  if (!selectedWords.size) return toast('请先选择文字');
+  mutate(() => { for (const word of allWords()) if (selectedWords.has(word.id)) word.deleted = deleted; });
+}
+
+function undo() { if (!history.length) return; future.push(clone(state)); state = history.pop(); updateTimelinePositions(); render(); scheduleSave(); }
+function redo() { if (!future.length) return; history.push(clone(state)); state = future.pop(); updateTimelinePositions(); render(); scheduleSave(); }
+
+player.addEventListener('loadedmetadata', () => { player.currentTime = Number(player.dataset.pendingTime || 0); player.play().catch(() => {}); });
+player.addEventListener('timeupdate', () => {
+  const clip = currentVideo();
+  $('#timeReadout').textContent = `${fmt(player.currentTime)} / ${fmt(sequenceDuration())}`;
+  const deletedWord = allWords().find((word) => word.deleted && player.currentTime >= word.start && player.currentTime < word.end);
+  const appliedCut = state.cuts.find((cut) => cut.assetId === clip?.assetId && player.currentTime >= cut.start && player.currentTime < cut.end);
+  if (deletedWord) { player.currentTime = deletedWord.end; return; }
+  if (appliedCut) { player.currentTime = appliedCut.end; return; }
+  if (clip && player.currentTime >= clip.sourceEnd - .03) loadClip(currentIndex + 1);
+  document.querySelectorAll('.word.playing').forEach((element) => element.classList.remove('playing'));
+  const playing = allWords().find((word) => !word.deleted && player.currentTime >= word.start && player.currentTime < word.end);
+  if (playing) document.querySelector(`[data-word-id="${CSS.escape(playing.id)}"]`)?.classList.add('playing');
+});
+
+$('#prevClip').onclick = () => loadClip(currentIndex - 1);
+$('#nextClip').onclick = () => loadClip(currentIndex + 1);
+$('#splitBtn').onclick = splitCurrent;
+$('#deleteWordsBtn').onclick = () => toggleWords(true);
+$('#restoreWordsBtn').onclick = () => toggleWords(false);
+$('#selectAllBtn').onclick = () => { const clip = currentVideo(); if (!clip) return; selectedWords = new Set(allWords().filter((word) => word.start >= clip.sourceStart && word.end <= clip.sourceEnd).map((word) => word.id)); renderTranscript(); };
+$('#zoomInput').oninput = (event) => { pixelsPerSecond = Number(event.target.value); renderTimeline(); };
+$('#undoBtn').onclick = undo;
+$('#redoBtn').onclick = redo;
+$('#toggleClipBtn').onclick = () => { const item = currentItem() || currentVideo(); if (!item) return; const next = item.enabled === false; mutate(() => { item.enabled = next; if (state.tracks.video.includes(item)) { const audio = state.tracks.audio.find((candidate) => candidate.linkId === item.linkId); if (audio) audio.enabled = next; } }); };
+$('#captionText').onchange = (event) => { const item = currentItem(); const video = currentVideo(); const caption = item && state.tracks.captions.includes(item) ? item : video ? captionFor(video) : null; if (caption) mutate(() => { caption.text = event.target.value; }); };
+$('#volumeInput').onchange = (event) => { const item = currentItem() || currentVideo(); if (item?.volume !== undefined) mutate(() => { item.volume = Math.max(0, Math.min(2, Number(event.target.value) || 0)); }); };
+$('#speedInput').onchange = (event) => { const video = currentVideo(); if (video) mutate(() => { video.speed = Math.max(.25, Math.min(4, Number(event.target.value) || 1)); }); };
+$('#confirmBtn').onclick = () => mutate(() => { state.status = 'confirmed'; state.confirmedAt = new Date().toISOString(); });
+$('#exportBtn').onclick = async () => { await save(); const button = $('#exportBtn'); button.disabled = true; button.textContent = '导出中…'; const response = await fetch('/api/export-review', { method: 'POST' }); const output = await response.json().catch(() => ({ error: '导出失败' })); button.disabled = false; button.textContent = '导出审片'; toast(response.ok ? `已导出：${output.file}` : output.error); };
+$('#jianyingBtn').onclick = async () => { await save(); const button = $('#jianyingBtn'); button.disabled = true; button.textContent = '准备中…'; const response = await fetch('/api/export-jianying', { method: 'POST' }); const output = await response.json().catch(() => ({ error: '剪映工程导出失败' })); button.disabled = false; button.textContent = '导出剪映工程'; $('#exportDialogText').textContent = response.ok ? `工程包已生成：${output.path}` : output.error || '暂时无法导出'; $('#exportDialog').hidden = false; };
+$('#closeDialog').onclick = () => { $('#exportDialog').hidden = true; };
+
+load().catch((error) => { $('#saveState').textContent = '载入失败'; toast(error.message); });
