@@ -14,9 +14,11 @@
 在 Codex 中发送：
 
 ```text
-请使用 skill-installer 从以下 GitHub 仓库安装 tutorial-video-workflow：
+帮我安装这个 Skill：
 https://github.com/hirclelili/tutorial-video-workflow/tree/main/skills/tutorial-video-workflow
 ```
+
+`skill-installer` 是 Codex 自带的安装能力，用户无需提前安装或了解它。直接把上面的 GitHub 链接发给 Codex，并说明要安装即可。
 
 安装完成后，在新任务中使用：
 
