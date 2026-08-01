@@ -1,4 +1,4 @@
 interface:
   display_name: "可编辑视频工作流"
-  short_description: "确认目标和主视频，交付素材已匹配的可编辑剪映工程包"
-  default_prompt: "Use $tutorial-video-workflow to confirm my goal and primary media, then create one self-contained editable JianYing project package whose matched timeline I can continue editing."
+  short_description: "自动粗剪后，在内置工作台手动粗剪和逐字精剪"
+  default_prompt: "Use $tutorial-video-workflow to confirm my main video, create an automatic rough cut, and open the bundled workbench so I can manually rough-cut and edit by transcript before optional JianYing export."

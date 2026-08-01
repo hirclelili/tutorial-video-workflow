@@ -31,7 +31,8 @@ Python 可用后检查 `ffmpeg` 和 `ffprobe`。两者通常由同一个 FFmpeg 
 只在功能触发时处理：
 
 - Node.js、Remotion、Chrome/Chromium：复杂动效；
-- OpenChatCut：可视化精剪；
+- 用户已有的浏览器：打开内置粗剪与逐字精剪工作台；不要求 Chromium；
+- OpenChatCut：仅供用户主动选择的高级外部精剪；
 - CapCut Mate：生成或更新可编辑剪映工程结构；仅在用户要求剪映工程包时需要。优先使用其官方支持的安装方式并记录版本，不把未知来源脚本当作同名工具；
 - 额外生成服务：封面、补充画面或音频生成。
 

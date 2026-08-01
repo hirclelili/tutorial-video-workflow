@@ -16,10 +16,13 @@ project/
 │   ├── proxies/
 │   ├── clips/
 │   └── generated_assets/
+├── workbench/
+│   ├── project.json
+│   └── revisions/
 ├── previews/           每阶段版本化预览
 └── deliverables/
     ├── capcut_v1_rough_cut/
-    ├── openchatcut_project/
+    ├── workbench_review/
     └── capcut_v2_refined/
 ```
 

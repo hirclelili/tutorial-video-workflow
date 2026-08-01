@@ -1,19 +1,19 @@
 ---
 name: tutorial-video-workflow
-description: Orchestrate a single editable video project from an arbitrary mixed folder of video, audio, image, subtitle, or existing project files. Use when Codex must first ask the user's goal, confirm one exact primary media file, choose a fitting workflow such as talking-head cleanup, tutorial, montage, interview, podcast, long-to-short, voice-over, or existing-project refinement, and deliver a self-contained editable JianYing/CapCut project package with matched timeline, tracks, captions, and media, plus optional OpenChatCut refinement.
+description: Orchestrate one editable video from arbitrary local media. Use when Codex must confirm the user's goal and one primary file, create an automatic rough cut, open a bundled browser workbench for manual rough cutting and word-level fine cutting, preserve separate basic video/audio/caption tracks, export a review video, and optionally deliver a self-contained editable JianYing/CapCut project package.
 ---
 
 # Editable Video Workflow
 
-把 `video-editing`、`design-style`、`imagegen`、OpenChatCut 和剪映组织成一条可恢复的单视频流程。不要假设素材类型或目录结构；先确认用户目标和一个主处理对象，再选择流程。
+把自动粗剪、Skill 内置工作台、审片导出和可选剪映工程组织成一条可恢复的单视频流程。不要假设素材类型或目录结构；先确认用户目标和一个主处理对象，再选择流程。
 
 ## 核心约束
 
 1. 保持原素材只读；只在项目目录内创建派生文件。
-2. 先生成并实际打开验证剪映工程包 V1，再开始 OpenChatCut 交接。
-3. 不因 OpenChatCut 不可用或回写失败而阻塞剪映 V1。
+2. 默认先自动粗剪，再让用户在内置工作台完成手动粗剪和逐字精剪。
+3. 不要求安装 OpenChatCut。仅当用户主动要求高级外部工作台时，把它作为可选交接。
 4. 保持字幕为可编辑文本，尽量保持视频、音频、录屏和画中画分轨。
-5. 只烘焙剪映无法稳定表达的复杂 Remotion 动效，并将每个烘焙结果作为独立素材交付。
+5. 默认不制作复杂动效、调色、花字、关键帧或高级混音；将这些留给最终剪映精剪。
 6. 不覆盖已验证版本；使用 `capcut_v1_rough_cut`、`capcut_v2_refined` 等递增目录。
 7. 把内容判断交给 Codex，把文件结构、环境检查和草稿静态检查交给本 Skill 的脚本。
 8. 默认一次只处理一个主媒体文件并生成一条成片；其他文件必须经用户确认后才能作为辅助素材。
@@ -46,8 +46,8 @@ description: Orchestrate a single editable video project from an arbitrary mixed
 2. 文字或内容清理：可同步播放的转写校稿页，或带时间码的保留/删除建议。
 3. 粗剪：低码率完整审片 MP4；必要时附时间线图、波形或切点对比。
 4. 画面与视觉：录屏匹配表、分镜、关键帧、封面候选或带画中画/动效的代理视频。
-5. 剪映 V1：与草稿时间线一致的审片代理、静态验证报告和剪映实际打开门禁。
-6. OpenChatCut：使用手动审批会话，让用户在工作台内预览提案。
+5. 内置工作台：用户完成手动粗剪、逐字精剪并确认当前时间线。
+6. 剪映 V1：与草稿时间线一致的审片代理、结构验证报告和剪映实际打开门禁。
 7. 剪映 V2：再次生成审片代理并重复草稿验证。
 
 使用 `video-editing` Skill 已有的 `transcript_review.py`、`review_proxy.py`、`timeline_view.py`、`edit_compare.py` 或 `review_dashboard.py`，只调用当前阶段需要的工具。在 Codex App 中用可点击的绝对文件链接展示 HTML、报告和视频，并直接渲染适合内联查看的图片或媒体；不要只报告文件路径。
@@ -92,11 +92,11 @@ python3 scripts/init_project.py \
 
 - 基础粗剪需要 Python、FFmpeg/ffprobe、Whisper 能力和 `video-editing` Skill。
 - 复杂动效才需要 Node.js、Remotion 和 Chromium。
-- OpenChatCut 仅在可用时启用；剪映 V1 不依赖它。
+- 内置工作台不依赖 Node.js、Remotion、Chromium 或 OpenChatCut；使用 Python 本地服务和用户已有浏览器。
 - 缺少 Skill 时，说明缺失项并在用户要求安装后使用 `skill-installer`。
 - 不静默安装或升级系统软件；尽量把必需项汇总为一次许可请求。
 
-## 阶段一：执行所选流程
+## 阶段一：自动粗剪
 
 读取已安装 `video-editing` Skill 的当前说明，不复制或猜测其命令。只运行所选路线需要的能力，不机械执行完整教程流程。
 
@@ -104,7 +104,29 @@ python3 scripts/init_project.py \
 
 把关键决定持续写入 `workflow/project.json`，不要只留在对话里。详细交付契约见 [references/workflow-contract.md](references/workflow-contract.md)。
 
-## 阶段二：可编辑剪映工程包 V1
+## 阶段二：内置粗剪与逐字精剪工作台
+
+读取 [references/builtin-workbench.md](references/builtin-workbench.md)。有逐字稿后创建工作台项目：
+
+```bash
+python3 scripts/create_workbench_project.py \
+  --project <项目目录> \
+  --media <主视频> \
+  --transcript <带字级时间戳的转写 JSON> \
+  --title "<项目标题>"
+```
+
+再启动固定工作台：
+
+```bash
+python3 scripts/workbench_server.py --project <项目目录> --port 8765 --open
+```
+
+工作台必须支持视频与逐字稿联动、文字删除与恢复、片段删除与恢复、播放位置拆分、拖动排序、字幕修改、基础视频/音频/字幕分轨、撤销、重做、自动保存和审片视频导出。所有操作写入 `workbench/project.json`；原素材保持只读。
+
+用户点击“确认当前剪辑”后，读取最新工作台时间线并生成后续统一时间线。工作台状态未确认为 `confirmed` 时，不生成最终剪映工程。
+
+## 阶段三：可编辑剪映工程包 V1（可选）
 
 读取 [references/capcut-project-package.md](references/capcut-project-package.md) 并按其中的低自由度流程交付。正式交付不是一组待导入素材，也不是单个合成 MP4，而是一个自包含的可编辑剪映工程包：素材已经按时间线匹配，视频、音频、字幕、录屏、画中画和可替换动效保持合理分轨。
 
@@ -139,9 +161,9 @@ python3 scripts/validate_capcut_draft.py \
 
 结构验证不等于剪映兼容性验证。报告中使用“工程包结构检查通过”，不要写“剪映草稿已生成并可打开”或“兼容性通过”。用户实际打开、保存、关闭并重新打开后，才能称为“可用的可编辑剪映工程包”。如果打不开，保留失败包和报告，回到原生模板/版本匹配步骤修复；不要退化成普通素材包并宣称完成。
 
-## 阶段三：OpenChatCut 精剪补充
+## 可选：OpenChatCut 高级交接
 
-仅在剪映 V1 已生成后启用。读取 [references/openchatcut-handoff.md](references/openchatcut-handoff.md)，再执行交接。
+仅在用户明确要求内置工作台范围之外的高级外部编辑能力时启用。读取 [references/openchatcut-handoff.md](references/openchatcut-handoff.md)，再执行交接。
 
 优先通过 OpenChatCut MCP 创建隔离编辑会话，以手动审批模式提交修改。让用户在工作台中预览、调整、撤销或批准。把每次批准后的操作摘要写入 `workflow/openchatcut_changes.json`。
 
@@ -152,26 +174,18 @@ python3 scripts/validate_capcut_draft.py \
 - 修改操作记录；
 - 审片 MP4。
 
-## 阶段四：回到剪映
+## 阶段四：剪映最终精剪
 
-如果存在可靠的 OpenChatCut → 剪映转换器，生成 `capcut_v2_refined` 并重复完整剪映门禁。
-
-如果不存在或转换失败：
-
-1. 保留可用的剪映 V1，不修改或覆盖它。
-2. 从 `openchatcut_changes.json` 中提取剪切、移动、字幕、音量、画中画和素材替换操作。
-3. 将可表达的操作重新应用到统一剪辑配置。
-4. 重新导出剪映 V2 并验证。
-5. 将无法转换的操作写成带时间码的人工精剪清单。
+用户要求剪映交付时，直接从已确认的 `workbench/project.json` 转换统一时间线，再生成分轨剪映工程包。不要通过 OpenChatCut 中转。工作台负责前期粗剪和逐字精剪，剪映负责用户后续的最终包装。
 
 ## 完成条件
 
-仅在以下条件满足时报告完成：
+仅在以下条件满足时报告工作台阶段完成：
 
-- 至少存在一个结构检查通过、自包含且素材已匹配的剪映工程包版本；
-- 用户已在目标剪映版本中实际打开、保存、关闭并重新打开该工程包；
+- 工作台状态为 `confirmed`，自动保存版本仍可读取；
+- 与确认时间线一致的审片视频已经导出并由用户批准；
 - 原素材未被修改；
-- 所有烘焙素材独立可替换；
-- OpenChatCut 失败不会破坏剪映保底版本；
 - 项目状态足以让下一次 Codex 会话继续执行。
 - 所有适用的阶段预览均已由用户批准，不适用阶段已记录跳过原因。
+
+如果用户同时要求剪映交付，还必须存在一个结构检查通过、自包含且素材已匹配的剪映工程包，并由用户在目标剪映版本中完成打开、保存、关闭和重新打开验证。

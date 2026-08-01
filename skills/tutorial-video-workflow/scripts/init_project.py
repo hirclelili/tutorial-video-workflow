@@ -62,10 +62,10 @@ def main() -> int:
 
     for relative in (
         "workflow", "work/transcripts", "work/proxies", "work/clips",
-        "work/generated_assets", "previews/plan", "previews/content",
+        "work/generated_assets", "workbench/revisions", "previews/plan", "previews/content",
         "previews/rough_cut", "previews/visual", "previews/capcut_v1",
-        "previews/openchatcut", "previews/capcut_v2", "deliverables/capcut_v1_rough_cut",
-        "deliverables/openchatcut_project", "deliverables/capcut_v2_refined",
+        "previews/workbench", "previews/capcut_v2", "deliverables/capcut_v1_rough_cut",
+        "deliverables/workbench_review", "deliverables/capcut_v2_refined",
     ):
         (project / relative).mkdir(parents=True, exist_ok=True)
 

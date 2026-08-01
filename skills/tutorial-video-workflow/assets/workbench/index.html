@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>视频粗剪工作台</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">CODEX VIDEO WORKBENCH</p>
+      <h1 id="projectTitle">视频粗剪工作台</h1>
+    </div>
+    <div class="header-actions">
+      <span id="saveState" class="status">正在载入…</span>
+      <button id="undoBtn" class="ghost">撤销</button>
+      <button id="redoBtn" class="ghost">重做</button>
+      <button id="exportBtn" class="primary">导出审片视频</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="viewer-panel panel">
+      <div class="viewer-wrap">
+        <video id="player" controls playsinline></video>
+        <div id="emptyPlayer" class="empty">载入项目后即可预览</div>
+      </div>
+      <div class="transport">
+        <button id="prevClip">上一段</button>
+        <button id="splitBtn">在播放位置拆分</button>
+        <button id="nextClip">下一段</button>
+        <span id="timeReadout">00:00.00 / 00:00.00</span>
+      </div>
+    </section>
+
+    <section class="transcript-panel panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">逐字精剪</p>
+          <h2>点击文字定位，选择后删除或恢复</h2>
+        </div>
+        <div class="transcript-actions">
+          <button id="selectAllBtn">选择本句</button>
+          <button id="deleteWordsBtn" class="danger">删除所选</button>
+          <button id="restoreWordsBtn">恢复所选</button>
+        </div>
+      </div>
+      <div id="transcript" class="transcript"></div>
+    </section>
+
+    <section class="timeline-panel panel">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">手动粗剪</p>
+          <h2>拖动视频片段调整顺序</h2>
+        </div>
+        <span id="durationBadge" class="badge">0 秒</span>
+      </div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <aside class="inspector panel">
+      <p class="eyebrow">当前片段</p>
+      <h2 id="clipName">尚未选择</h2>
+      <label>字幕文字</label>
+      <textarea id="captionText" rows="5" placeholder="选择片段后修改字幕"></textarea>
+      <div class="two-cols">
+        <label>音量<input id="volumeInput" type="number" min="0" max="2" step="0.05"></label>
+        <label>速度<input id="speedInput" type="number" min="0.25" max="4" step="0.05"></label>
+      </div>
+      <button id="toggleClipBtn" class="danger full">删除当前片段</button>
+      <button id="confirmBtn" class="primary full">确认当前剪辑</button>
+      <p class="hint">所有操作都会自动保存。原始素材不会被修改。</p>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
