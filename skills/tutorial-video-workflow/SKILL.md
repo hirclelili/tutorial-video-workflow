@@ -19,19 +19,29 @@ description: Orchestrate editable tutorial-video production from segmented narra
 
 ## 启动流程
 
-定位素材目录后运行：
+在运行任何 Python 脚本前，先用当前系统的原生命令检查 Python 3。POSIX 系统优先运行不依赖 Python 的启动器：
+
+```bash
+scripts/bootstrap.sh --project <项目目录>
+```
+
+Windows PowerShell 先运行 `Get-Command python -ErrorAction SilentlyContinue` 和 `python --version`。不要在 Python 缺失时尝试运行 `preflight.py`。
+
+如果缺少 Python 3，读取 [references/dependency-bootstrap.md](references/dependency-bootstrap.md)，说明用途和安装范围，向用户申请许可，再使用当前系统可用的软件包管理器安装。安装后验证版本并重新运行启动器；不要让用户自己复制多条安装命令。
+
+Python 可用后运行：
 
 ```bash
 python3 scripts/init_project.py --source <素材目录> --project <项目目录>
-python3 scripts/preflight.py --project <项目目录>
 ```
 
-读取生成的 `workflow/project.json` 和 `workflow/preflight.json`。不要因为缺少高级依赖而停止基础粗剪：
+如果启动器选择的是 `python` 而不是 `python3`，后续使用同一解释器。读取生成的 `workflow/project.json` 和 `workflow/preflight.json`。不要因为缺少高级依赖而停止基础粗剪：
 
 - 基础粗剪需要 Python、FFmpeg/ffprobe、Whisper 能力和 `video-editing` Skill。
 - 复杂动效才需要 Node.js、Remotion 和 Chromium。
 - OpenChatCut 仅在可用时启用；剪映 V1 不依赖它。
 - 缺少 Skill 时，说明缺失项并在用户要求安装后使用 `skill-installer`。
+- 不静默安装或升级系统软件；尽量把必需项汇总为一次许可请求。
 
 ## 阶段一：自动粗剪
 

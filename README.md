@@ -29,3 +29,5 @@ https://github.com/hirclelili/tutorial-video-workflow/tree/main/skills/tutorial-
 ## 能力边界
 
 本仓库提供编排、项目初始化、分层环境检查、剪映草稿静态验证和 OpenChatCut 交接规则。实际转写、自动粗剪、视觉生成和剪映草稿导出会按需调用相应 Skill 或本机工具。
+
+首次运行时会先检查 Python 3。用户没有安装 Python 时，Codex 会说明用途并申请许可，安装和验证后继续原视频任务；不会要求用户提前准备开发环境，也不会静默安装系统软件。
